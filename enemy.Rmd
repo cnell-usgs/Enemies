@@ -1,0 +1,51 @@
+---
+title: "Diversity Effects"
+author: "collnell"
+date: "June 29, 2016"
+output: 
+  html_document:
+    theme: flatly
+    toc: true
+    toc_depth: 2
+    toc_float: true
+    number_sections: true
+    code_folding: hide
+---
+
+```{r,libs,comment=F,message=F,warning=F,echo=F}
+library(dplyr)
+library(reshape2)
+library(shiny)
+library(DT)
+
+
+```
+
+```{r, datain, comment=F,message=F,warning=F,echo=F}
+birds<-read.csv("/Users/colleennell/Documents/R/enemies/enemy_bird_visit.csv")
+
+
+```
+## Bird Observations  
+  
+  
+```{r,plotbysp,echo=F,message=F,results='asis'}
+
+obs.table<-DT::datatable(birds,extensions='Buttons',rownames=F,style='bootstrap',options=list(scrollY="350px",paging=F,dom='Bft',buttons=list('csv','copy')))
+obs.table
+```
+  
+### Summary Statistics    
+      - methods check  
+      
+        
+### By Site  
+  
+## Bird Community  
+  
+### Diversity  
+  
+### Species Richness  
+  
+  
+  
