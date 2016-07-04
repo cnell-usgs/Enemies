@@ -1,0 +1,44 @@
+---
+title: "Untitled"
+output: 
+  html_document:
+    toc: yes
+    toc_float: yes
+    theme: flatly
+---
+
+```{r setup, include=FALSE}
+library(shiny)
+library(ggplot2)
+library(ggthemes)
+library(reshape2)
+library(plotly)
+library(dplyr)
+###enter data
+birds<-read.csv("/Users/colleennell/Documents/R/enemies/enemy_bird_visit.csv")
+sp.list<-read.csv("/Users/colleennell/Documents/R/enemies/enemy_bird_list.csv")
+```
+Column {data-width=650}
+-----------------------------------------------------------------------
+
+### Chart A
+
+```{r}
+
+```
+
+Column {data-width=350}
+-----------------------------------------------------------------------
+
+### Chart B
+
+```{r}
+
+```
+
+### Chart C
+
+```{r}
+
+```
+
