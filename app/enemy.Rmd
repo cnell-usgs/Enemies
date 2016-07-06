@@ -3,7 +3,7 @@ title: "Tree Diversity Effects"
 output: 
   flexdashboard::flex_dashboard:
     orientation: rows
-    vertical_layout: scroll
+    vertical_layout: fill
     social: menu
     theme: flatly
 ---
@@ -58,11 +58,22 @@ bird.plot<-birds%>%
 
 
 
+#by diversity
+abun_by_plot<-ggplot(bird.plot,aes(x=reorder(PLOT,birds_30),y=birds_30,fill=DIVERSITY))+
+  geom_bar(stat="identity")+
+  geom_errorbar(aes(ymin=birds_30-se_30,ymax=birds_30+se_30))+
+  labs(x="Plot",y="Birds/30/plot")
 
 
 ```
 
 ```{r}
+#Define inputs
+selectInput('bird_metric',label='Bird Community Metric',choices=c('abundance','diversity','evennes','richness'))
+
+
+
+
 
 
 
@@ -84,42 +95,18 @@ abun_by_plot<-ggplot(bird.plot,aes(x=reorder(PLOT,birds_30),y=birds_30),fill=DIV
   geom_bar(stat="identity")+
   labs(x="Plot",y="Birds/30/plot")
 abun_by_plot
-plot_diff_abun<-aov(total_abun~PLOT+VISIT,data=birds)
-summary(plot_diff_abun)##bird abundance varies by plot
 
 ```
 
-Row
+Column {data-width=350}
 -----------------------------------------------------------------------
 
 ### Chart B
 
 ```{r}
-bird.div<-bird.plot%>%
-  group_by(DIVERSITY)%>%
-  summarize(total_birds_div=sum(total_birds_plot),
-            n_plots=length(PLOT),
-            mean_birds_plot_30=mean(birds_30),
-            se_birds_plot_30=std(birds_30),
-            mean_birds_plot_visit=sum(total_birds_plot)/sum(n_visit),
-            se_birds_plot_visit=std(total_birds_plot))
 
-abun_by_div<-aov(mean_birds_visit~DIVERSITY,data=bird.plot)##plot is replicate
-summary(abun_by_div)
-```
-<br>  
-```{r,fig.height=4, fig.width=3}
-div_abun_plot<-ggplot(bird.div,aes(x=DIVERSITY,y=mean_birds_plot_30,color=DIVERSITY))+
-  geom_point(size=10,shape=1)+
-  geom_errorbar(aes(ymin=mean_birds_plot_30-se_birds_plot_30,ymax=mean_birds_plot_30+se_birds_plot_30),color="black",width=.1)+
-  labs(x="Tree Diversity",y="Birds/30/plot")+
-  theme_minimal()+
-  theme(legend.position="none")
-div_abun_plot+geom_point(data=bird.plot,aes(x=DIVERSITY,y=birds_30),size=2)
 ```
 
-Row
-------------------------------
 ### Chart C
 
 ```{r}
