@@ -17,14 +17,13 @@ output:
 ```{r setup, include=FALSE}
 library(shiny)
 library(ggplot2)
-library(ggthemes)
 library(reshape2)
 library(plotly)
 library(dplyr)
 library(flexdashboard)
 ###enter data
-birds<-read.csv("/Users/colleennell/Documents/R/enemies/enemy_bird_visit.csv")
-sp.list<-read.csv("/Users/colleennell/Documents/R/enemies/enemy_bird_list.csv")
+birds<-read.csv("enemy_bird_visit.csv")
+sp.list<-read.csv("enemy_bird_list.csv")
 ```
 
 ```{r,datasummary}
@@ -39,6 +38,8 @@ drops<-c("DIVERSITY","PLOT","VISIT")
 sps<-cols[-c(1:3)]##this is a list of the names of the birds only
 birds$VISIT<-as.character(birds$VISIT)
 birds$total_abun<-rowSums(birds[,sps])
+
+
 ##summarize data for plots/analyses
 #by plot
 #abundance
@@ -53,11 +54,39 @@ bird.plot<-birds%>%
             se_30=std(birds_plot_visit)*3)
 
 
+```
+#Bird Observations  
+###Overall Summary  
+```{r,allplot,warning=F}
+birds.melt<-melt(birds,id.vars=c("DIVERSITY","PLOT","VISIT","total_abun"),variable.name="ID")%>%
+  left_join(sp.list[,c("ID","feeding.guild","Family","Order")],by="ID")
+```
+**`r length(unique(birds.melt$PLOT))` plots**   
+**`r sum(birds.melt$value)` observations**   
+**`r length(unique(birds.melt$ID))` species**   
+**`r length(unique(birds.melt$Family))` families**; `r sort(unique(birds.melt$Family))`  
+**`r length(unique(birds.melt$Order))` orders**; `r sort(unique(birds.melt$Order))`  
+```{r,insecteaters}
+insect.birds<-birds.melt%>%
+  filter(feeding.guild %in% c("IN","FL","OM"))
+```
+**Insectivorous Birds**  (including gleaners, flycatchers, and omnivores that include insects)  
+**`r sum(insect.birds$value)` observations**  
+**`r length(unique(insect.birds$ID))` species**  
+**`r length(unique(insect.birds$Family))` families**; `r sort(unique(insect.birds$Family))`  
+**`r length(unique(insect.birds$Order))` orders**; `r sort(unique(insect.birds$Order))`  
 
+```{r insectplot}
+birds.melt.guild<-birds.melt%>%
+  group_by(feeding.guild)%>%
+  summarize(obs=sum(value))
+birds.melt.guild$feeding.guild<-reorder(birds.melt.guild$feeding.guild,birds.melt.guild$obs)
 
+insectplot<-ggplot(birds.melt.guild,aes(x="",y=obs,fill=feeding.guild))+geom_bar(width=1,stat="identity")+theme_minimal()+scale_fill_brewer(name="Feeding Guild",palette="Set3")+labs(x="",y="")
+pie<-insectplot+coord_polar("y",start=0)
+pie
 
 ```
-
   
 
 ```{r}
@@ -70,6 +99,27 @@ plot_diff_abun<-aov(total_abun~PLOT+VISIT,data=birds)
 summary(plot_diff_abun)##bird abundance varies by plot
 
 ```
+
+
+#Data  
+###Description
+These data are from a field experiment conducted July 2015 at the [UADY forest diversity plots near Muna, Yucatan, Mexico](http://www.treedivnet.ugent.be/ExpUADY.html). Using the tree diversity manipulation we test the predictions that  
+(1) tree diversity promotes the abundance and diversity of predators (insectivorous birds) and   
+(2) via effects on predators, tree diversity is correlated with greater herbivore suppression.  
+  
+###Data sheets  
+[**Bird Observations**](https://github.com/collnell/Enemies/blob/master/enemy_bird_visit.csv)  
+Bird survey results from 15 minute point counts at the plot level. Each plot was visited 4 times on separate days between 0600 and 0930. These observations reflect birds actively foraging in the plots, excluding birds flying overhead or through the plot. The species of trees used by foraging birds were recorded once per individual tree. Birds that were not able to be identified definitively are recorded as species "X", or "CH X" if a partial ID was known (CH X = chipe unknown (warbler). All bird IDs match species information on the bird list.     
+  
+[**Bird List**](https://github.com/collnell/Enemies/blob/master/enemy_bird_list.csv)   
+Inventory on all bird species recorded at the UADY diversity plots in January and July of 2015.  Contians species codes and associated information for each ID (including feeding guild).  
+
+**Predation Experiment**  
+These data are from a clay caterpillar experiment used to assay predation rates between the plots. For each experimental plot, 2 clay models were placed on opposite branches of 12 trees. Models were visited twice, 24 and 48 hours after placement, to record attack marks. Marked models were identified as either Arthropod, Bird, and Mammal and replced with a new model.  
+
+**Experimental Design**  
+Data on plots used in experiment. Plot diversity, tree species, ETC  
+
 
 
 
