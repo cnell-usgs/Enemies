@@ -28,6 +28,11 @@ bird.sp<-birds[,sps]#matrix plot x sp
 ##summarize data for plots/analyses
 #by plot
 #abundance
+bird.visit<-birds%>%
+  mutate(birds_visit=rowSums(.[sps]))
+abun.by.guild<-aov(lm(birds_visit~DIVERSITY+PLOT/VISIT,data=bird.visit))
+summary(abun.by.guild)
+
 bird.plot<-birds%>%
   mutate(birds_plot_visit=rowSums(.[sps]))%>%
   group_by(DIVERSITY,PLOT)%>%
@@ -35,6 +40,46 @@ bird.plot<-birds%>%
             n_visit=length(VISIT),
             mean_birds_visit=mean(birds_plot_visit),
             se_birds_visit=std(birds_plot_visit))
+
+
+birds.melt<-melt(birds,id.vars=c("DIVERSITY","PLOT","VISIT","total_abun"),variable.name="ID")%>%
+  left_join(sp.list[,c("ID","feeding.guild","Family","Order")],by="ID")
+
+plot.visit<-birds.melt%>%
+  group_by(DIVERSITY,PLOT,VISIT)%>%
+  summarize(total_birds_plot=sum(value))%>%
+  group_by(DIVERSITY,PLOT)%>%
+  summarize(mean_birds_plot = mean(total_birds_plot))
+
+plot.guild<-birds.melt%>%
+  group_by(DIVERSITY,PLOT,VISIT,feeding.guild)%>%
+  summarize(total_birds_visit = sum(value))%>%
+  group_by(DIVERSITY,PLOT,feeding.guild)%>%
+  summarize(mean_birds_visit=mean(total_birds_visit),se_birds_visit = std(total_birds_visit))%>%
+  left_join(plot.visit[,c("PLOT","mean_birds_plot")],by="PLOT")%>%
+  mutate(per_birds_visit= (mean_birds_visit/mean_birds_plot)*100)
+
+plot.dcast<-dcast(plot.guild,DIVERSITY+PLOT~feeding.guild)
+
+div.per.guild<-plot.dcast%>%
+  group_by(DIVERSITY)%>%
+  summarize_each(funs(mean))%>%
+  melt(id.vars="DIVERSITY")%>%
+  filter(variable!='PLOT')
+View(div.per.guild)
+
+guilddiv2<-ggplot(div.guild,aes(y=total_birds,x=reorder(feeding.guild,total_birds),fill=DIVERSITY))+
+  geom_bar(stat="identity",position="dodge")+
+  scale_fill_brewer("Plot Diversity",labels=c("Monoculture","Polyculture"),palette="Paired")+
+  theme_minimal()+theme(legend.position="top")+labs(x="Feeding Guild",y="Total Birds Observed")
+guilddiv2##this is total observations though
+##want the mean % composition by feeding guild for each diversity, with errorbars
+
+
+##convert to percentage of total abundance
+plot.guild
+
+plot.d.guild<-dcast(plot.guild,feeding.guild~DIVERSITY,PLOT,VISIT)
 
 bird.div<-bird.plot%>%
   group_by(DIVERSITY)%>%
