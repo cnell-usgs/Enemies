@@ -1,6 +1,6 @@
 
 ---
-title: "Diversity effects: the enemies hypothesis"
+title: "Diversity effects: bird community"
 author: "collnell"
 date: "July 5, 2016"
 output: 
@@ -31,7 +31,7 @@ birds<-read.csv("enemy_bird_visit.csv")
 sp.list<-read.csv("enemy_bird_list.csv")
 ```
 
-```{r,datasummary,warning=F}
+```{r,datasummary,warning=F,include=F}
 std <- function(x) sd(x)/sqrt(length(x))
 
 ##clean data 
@@ -86,11 +86,13 @@ ins.plot<-insect.birds%>%
             mean_birds_visit = mean(total_birds_plot_visit),
             n_visit=as.numeric(max(VISIT)),
             se_birds_visit = std(total_birds_plot_visit))
-```
-#Bird Observations  
-###All Birds  
+rarc.poly<-rarc(bird.poly.mat,nrandom=99)
+rarc.mono<-rarc(bird.mono.mat,nrandom=99)
+```  
+#All Birds  
+###Abundance  
 
-```{r, birdguilds,fig.height=4,message=F}
+```{r, fguilds,fig.height=4,message=F}
 div.guild<-birds.melt%>%###this is the total number of birds~diversity+feeding guild
   group_by(DIVERSITY,feeding.guild)%>%
   summarize(total_birds = sum(value))
@@ -111,44 +113,6 @@ plot.guild<-birds.melt%>%
 
 plot.dcast<-dcast(plot.guild,DIVERSITY+PLOT~feeding.guild)##div + plot ~guilds in percentages
 
-
-guilddiv<-ggplot(div.guild,aes(y=total_birds,x=reorder(feeding.guild,total_birds),fill=DIVERSITY))+
-  geom_bar(stat="identity")+
-  scale_fill_manual("Plot Diversity",labels=c("Monoculture","Polyculture"),values=c("darkslateblue","firebrick2"))+
-  theme_minimal()+theme(legend.position="top")+labs(x="Feeding Guild",y="Total Birds Observed")
-
-abun_by_plot<-ggplot(bird.plot,aes(x=reorder(PLOT,mean_birds_visit),y=mean_birds_visit,color=DIVERSITY))+
-  geom_errorbar(aes(ymin=mean_birds_visit-se_birds_visit,ymax=mean_birds_visit+se_birds_visit),color="black")+
-  geom_point(size=3,shape=16)+
-  scale_color_manual("Plot Diversity",labels=c("Monoculture","Polyculture"),values=c("darkslateblue","firebrick2"))+
-  theme_minimal()+
-  theme(legend.position="none",axis.text.x=element_blank())+
-  labs(x="Plot",y="Birds/Visit")
-allabun<-abun_by_plot+geom_point(data=bird.visit,aes(x=reorder(PLOT,total_abun),y=total_abun),size=2,shape=1)
-
-plot_grid(guilddiv,allabun)
-```
-
-```{r,allbird,fig.height=4,message=F,comment=F}
-rarc.poly<-rarc(bird.poly.mat,nrandom=99)
-rarc.mono<-rarc(bird.mono.mat,nrandom=99)
-
-div.rarc<-ggplot()+#by samples
-  geom_point(data=rarc.poly,aes(x=samples,y=richness),size=2,shape=1,color="firebrick2")+
-  geom_point(data=rarc.mono,aes(x=samples,y=richness),size=2,shape=1,color="darkslateblue")+
-  theme_minimal()+labs(x="Plot Sampled",y="Species Richness")
-
-div.rarc.ind<-ggplot()+#by individuals
-  geom_point(data=rarc.poly,aes(x=individuals,y=richness),size=2,shape=1,color="firebrick2")+
-  geom_point(data=rarc.mono,aes(x=individuals,y=richness),size=2,shape=1,color="darkslateblue")+
-  theme_minimal()+labs(x="Individuals",y="Species Richness")
-
-plot_grid(div.rarc,div.rarc.ind)
-
-```
-<br>  
-```{r,fig.height=3.5}
-
 plot.guild2<-birds.melt%>%
   group_by(DIVERSITY,PLOT,VISIT,feeding.guild)%>%
   summarize(total_birds_visit = sum(value))
@@ -158,10 +122,33 @@ plot.guild3<-plot.guild2%>%
   group_by(DIVERSITY,feeding.guild)%>%
   summarize(mean_birds_div = mean(mean_birds_visit), se_birds_div = std(mean_birds_visit))
 
-divguild.plot<-ggplot(plot.guild3,aes(x=reorder(feeding.guild,mean_birds_div),y=mean_birds_div,fill=DIVERSITY))+
-  geom_bar(stat="identity",position="dodge")+theme_minimal()+scale_fill_manual(values=c("darkslateblue","firebrick2"))+
-  geom_errorbar(aes(ymin=mean_birds_div-se_birds_div,ymax=mean_birds_div+se_birds_div),width=.2,position=position_dodge(.9))+theme(legend.position="none")+
-  labs(x="Feeding Guild",y="Birds/Visit")
+```
+<br>  
+```{r,diagnostics,fig.height=3.5}
+hist.div<-ggplot(bird.visit,aes(x=total_abun,fill=DIVERSITY,color=DIVERSITY),alpha=.6)+geom_density(alpha=.7)+
+  theme_minimal()+labs(y="Density",x="Bird Abundance")+
+  scale_fill_manual("Plot Diversity",labels=c("Monoculture","Polyculture"),values=c("darkslateblue","#1B9E77"))+scale_color_manual("Plot Diversity",labels=c("Monoculture","Polyculture"),values=c("darkslateblue","#1B9E77"))+
+  theme(legend.position="top")
+
+abun.rarc.ind<-ggplot()+#by individuals
+  geom_point(data=rarc.poly,aes(x=samples,y=individuals),size=2,shape=1,color="#1B9E77")+
+  geom_point(data=rarc.mono,aes(x=samples,y=individuals),size=2,shape=1,color="darkslateblue")+
+  theme_minimal()+labs(y="Individuals",x="Observation")
+
+plot_grid(hist.div,abun.rarc.ind)
+```
+
+
+```{r,plotplots,fig.height=4,message=F}
+
+abun_by_plot<-ggplot(bird.plot,aes(x=reorder(PLOT,mean_birds_visit),y=mean_birds_visit,color=DIVERSITY))+
+  geom_errorbar(aes(ymin=mean_birds_visit-se_birds_visit,ymax=mean_birds_visit+se_birds_visit),color="black")+
+  geom_point(size=3,shape=16)+
+  scale_color_manual("Plot Diversity",labels=c("Monoculture","Polyculture"),values=c("darkslateblue","#1B9E77"))+
+  theme_minimal()+
+  theme(legend.position="none",axis.text.x=element_blank())+
+  labs(x="Plot",y="Birds/Visit")
+allabun<-abun_by_plot+geom_point(data=bird.visit,aes(x=reorder(PLOT,total_abun),y=total_abun),size=2,shape=1)
 
 
 div_abun_plot<-ggplot(bird.div,aes(x=DIVERSITY,y=mean_birds_plot_visit,color=DIVERSITY))+
@@ -169,19 +156,29 @@ div_abun_plot<-ggplot(bird.div,aes(x=DIVERSITY,y=mean_birds_plot_visit,color=DIV
   geom_errorbar(aes(ymin=mean_birds_plot_visit-se_birds_plot_visit,ymax=mean_birds_plot_visit+se_birds_plot_visit),color="black",width=.1)+
   labs(x="Plot Diversity",y="Birds/Visit")+
   theme_minimal()+
-  scale_color_manual(labels=c("Monoculture","Polyculture"),values=c("darkslateblue","firebrick2"))+theme(legend.position="none")
+  scale_color_manual(labels=c("Monoculture","Polyculture"),values=c("darkslateblue","#1B9E77"))+theme(legend.position="none")
 div_abun_plos<-div_abun_plot+geom_point(data=bird.plot,aes(x=DIVERSITY,y=mean_birds_visit),size=2,shape=1,alpha=.65)
 
-plot_grid(divguild.plot,div_abun_plos)
-```  
-<br>  
-```{r,diagnostics,fig.height=3.5}
-hist.div<-ggplot(bird.visit,aes(x=total_abun,fill=DIVERSITY,color=DIVERSITY),alpha=.6)+geom_density(alpha=.7)+
-  theme_minimal()+labs(y="Density",x="Bird Abundance")+
-  scale_fill_manual("Plot Diversity",labels=c("Monoculture","Polyculture"),values=c("darkslateblue","firebrick2"))+scale_color_manual("Plot Diversity",labels=c("Monoculture","Polyculture"),values=c("darkslateblue","firebrick2"))+
-  theme(legend.position="none")
-plot_grid(hist.div,hist.div)
+plot_grid(allabun,div_abun_plos)
 ```
+
+
+<br>  
+```{r,divplots,fig.height=3.5}
+
+
+guilddiv<-ggplot(div.guild,aes(y=total_birds,x=reorder(feeding.guild,total_birds),fill=DIVERSITY))+
+  geom_bar(stat="identity")+
+  scale_fill_manual("Plot Diversity",labels=c("Monoculture","Polyculture"),values=c("darkslateblue","#1B9E77"))+
+  theme_minimal()+theme(legend.position="none")+labs(x="Feeding Guild",y="Total Birds Observed")
+
+divguild.plot<-ggplot(plot.guild3,aes(x=reorder(feeding.guild,mean_birds_div),y=mean_birds_div,fill=DIVERSITY))+
+  geom_bar(stat="identity",position="dodge")+theme_minimal()+scale_fill_manual(values=c("darkslateblue","#1B9E77"))+
+  geom_errorbar(aes(ymin=mean_birds_div-se_birds_div,ymax=mean_birds_div+se_birds_div),width=.2,position=position_dodge(.9))+theme(legend.position="none")+
+  labs(x="Feeding Guild",y="Birds/Visit")
+
+plot_grid(guilddiv,divguild.plot)
+```  
 
   
   
@@ -214,8 +211,7 @@ Guilds: Granivorous (GR), Carnivorous (CA), Nectivorous (NE), Frugivorous (FR), 
 
 
 ###Richness  
-
-All Birds  
+ 
   
 ```{r,richy,message=F}
 allrichness<-rich(matrix=bird.sp,verbose=T)
@@ -225,12 +221,26 @@ Mean richness plot/visit: `r allrichness$mr`
 Total richness: `r allrichness$cr`  
 Singletons: `r allrichness$singletons`  
  
+```{r,allbird,fig.height=4,message=F,comment=F}
+
+div.rarc<-ggplot()+#by samples
+  geom_point(data=rarc.poly,aes(x=samples,y=richness),size=2,shape=1,color="#1B9E77")+
+  geom_point(data=rarc.mono,aes(x=samples,y=richness),size=2,shape=1,color="darkslateblue")+
+  theme_minimal()+labs(x="Plot Sampled",y="Species Richness")
+
+div.rarc.ind<-ggplot()+#by individuals
+  geom_point(data=rarc.poly,aes(x=individuals,y=richness),size=2,shape=16,color="#1B9E77")+
+  geom_point(data=rarc.mono,aes(x=individuals,y=richness),size=2,shape=16,color="darkslateblue")+
+  theme_minimal()+labs(x="Individuals",y="Species Richness")
+
+plot_grid(div.rarc,div.rarc.ind)
+
+```
 
 
-
-###Insectivorous Birds   
+#Insectivorous Birds   
 (including gleaners, flycatchers, and omnivores that consume arthropods)  
-
+###repeat same things
 ```{r, insguilds,fig.height=4.5}
 ins.guild<-insect.birds%>%###this is the total number of insecitvorous birds~diversity+feeding guild
   group_by(DIVERSITY,feeding.guild)%>%
@@ -238,13 +248,13 @@ ins.guild<-insect.birds%>%###this is the total number of insecitvorous birds~div
 
 guilddiv<-ggplot(ins.guild,aes(y=total_birds,x=reorder(feeding.guild,total_birds),fill=DIVERSITY))+
   geom_bar(stat="identity")+
-  scale_fill_manual("Plot Diversity",labels=c("Monoculture","Polyculture"),values=wes_palette("Darjeeling"))+
+  scale_fill_manual("Plot Diversity",labels=c("Monoculture","Polyculture"),values=c("darkslateblue","#1B9E77"))+
   theme_minimal()+theme(legend.position="top")+labs(x="Feeding Guild",y="Total Birds Observed")
 
 abun_by_plot<-ggplot(ins.plot,aes(x=reorder(PLOT,mean_birds_visit),y=mean_birds_visit,fill=DIVERSITY))+
   geom_bar(stat="identity")+
   geom_errorbar(aes(ymin=mean_birds_visit-se_birds_visit,ymax=mean_birds_visit+se_birds_visit))+
-  scale_fill_manual("Plot Diversity",labels=c("Monoculture","Polyculture"),values=wes_palette("Darjeeling"))+
+  scale_fill_manual("Plot Diversity",labels=c("Monoculture","Polyculture"),values=c("darkslateblue","#1B9E77"))+
   theme_minimal()+
   theme(legend.position="none")+
   labs(x="Plot",y="Birds Observed/Visit")
@@ -261,12 +271,12 @@ ins.by.total<-lm(mean_birds_visit.x~mean_birds_visit.y,data=compareins)
 p<-summary(ins.by.total)$coefficients[,4]
 r2<-summary(ins.by.total)$r.squared
 
-typeplot<-ggplot(compareins,aes(x=mean_birds_visit.x,y=mean_birds_visit.y,fill=DIVERSITY.x))+
-  geom_point(size=2)+geom_smooth(method="lm",se=F)+
-  geom_errorbar(aes(ymin=mean_birds_visit.y-se_birds_visit.y,ymax=mean_birds_visit.y+se_birds_visit.y))+
-  geom_errorbarh(aes(xmin=mean_birds_visit.x-se_birds_visit.x,xmax=mean_birds_visit.x+se_birds_visit.x))+
+typeplot<-ggplot(compareins,aes(x=mean_birds_visit.x,y=mean_birds_visit.y,color=DIVERSITY.x))+
+  geom_point(size=2)+
+  geom_errorbar(aes(ymin=mean_birds_visit.y-se_birds_visit.y,ymax=mean_birds_visit.y+se_birds_visit.y),color="black")+
+  geom_errorbarh(aes(xmin=mean_birds_visit.x-se_birds_visit.x,xmax=mean_birds_visit.x+se_birds_visit.x),color="black")+
   theme_minimal()+
-  scale_fill_manual(values=wes_palette("Darjeeling"))+
+  scale_color_manual(values=c("darkslateblue","#1B9E77"))+
   theme(legend.position="none")+
   labs(x="Birds/Visit",y="Insectivores/Visit")
 typeplot
@@ -276,7 +286,7 @@ summary(ins.by.total)
     
 ###Exploratory Analysis  
 The following figures look at characteristics of the bird observation data, and the relationships between species abundance, occurance, and sampling effort.  
-```{r,EDA}
+```{r,EDA,include=F}
 spc_pres<-apply(bird.sp>0,2,sum)
 par(mfrow=c(2,2))
 occur<-plot(sort(spc_pres),log='y',main="Species by plot",xlab='Cumulative Count of Species',ylab='Number of Plots')#cumulative plot of species(x) by plot(y)

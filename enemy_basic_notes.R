@@ -6,6 +6,7 @@ library(cowplot)
 library(reshape2)
 library(plotly)
 library(dplyr)
+library(wesanderson)
 library(labdsv)
 ###enter data
 birds<-read.csv("enemy_bird_visit.csv")
@@ -51,13 +52,26 @@ plot.visit<-birds.melt%>%
   group_by(DIVERSITY,PLOT)%>%
   summarize(mean_birds_plot = mean(total_birds_plot))
 
-plot.guild<-birds.melt%>%
+plot.guild<-birds.melt%>% ###mean%'s
   group_by(DIVERSITY,PLOT,VISIT,feeding.guild)%>%
   summarize(total_birds_visit = sum(value))%>%
   group_by(DIVERSITY,PLOT,feeding.guild)%>%
   summarize(mean_birds_visit=mean(total_birds_visit),se_birds_visit = std(total_birds_visit))%>%
   left_join(plot.visit[,c("PLOT","mean_birds_plot")],by="PLOT")%>%
   mutate(per_birds_visit= (mean_birds_visit/mean_birds_plot)*100)
+
+plot.guild3<-birds.melt%>%
+  group_by(DIVERSITY,PLOT,VISIT,feeding.guild)%>%
+  summarize(total_birds_visit = sum(value))%>%
+  group_by(DIVERSITY,PLOT,feeding.guild)%>%
+  summarize(mean_birds_visit=mean(total_birds_visit),se_birds_visit = std(total_birds_visit))%>%
+  group_by(DIVERSITY,feeding.guild)%>%
+  summarize(mean_birds_div = mean(mean_birds_visit), se_birds_div = std(mean_birds_visit))
+
+divguild.plot<-ggplot(plot.guild3,aes(x=reorder(feeding.guild,mean_birds_div),y=mean_birds_div,fill=DIVERSITY))+
+  geom_bar(stat="identity",position="dodge")+theme_minimal()+scale_fill_manual(values=wes_palette("Darjeeling"))+
+  geom_errorbar(aes(ymin=mean_birds_div-se_birds_div,ymax=mean_birds_div+se_birds_div),width=.2,position=position_dodge(.9))
+divguild.plot
 
 plot.dcast<-dcast(plot.guild,DIVERSITY+PLOT~feeding.guild)
 
@@ -67,6 +81,13 @@ div.per.guild<-plot.dcast%>%
   melt(id.vars="DIVERSITY")%>%
   filter(variable!='PLOT')
 View(div.per.guild)
+
+plotgui<-ggplot(div.per.guild,aes(x=reorder(variable,value),y=value,fill=DIVERSITY))+
+  geom_bar(stat="identity",position="dodge")+theme_minimal()+scale_fill_manual(values=wes_palette("Darjeeling"))
+plotgui##does proportion really make sense? there is a higher proportion of insectivorous birds in monoculture plots
+##but a lower abundance
+##this should be the mean abundance of each guild by diversity
+
 
 guilddiv2<-ggplot(div.guild,aes(y=total_birds,x=reorder(feeding.guild,total_birds),fill=DIVERSITY))+
   geom_bar(stat="identity",position="dodge")+
@@ -228,3 +249,43 @@ div_abun_plot<-ggplot(bird.div,aes(x=DIVERSITY,y=mean_birds_plot_visit,color=DIV
   theme_minimal()+
   theme(legend.position="none")
 div_abun_plot+geom_point(data=bird.plot,aes(x=DIVERSITY,y=mean_birds_visit),size=2)
+
+###########
+abun_by_plot<-ggplot(bird.visit,aes(x=reorder(PLOT,total_abun),y=total_abun,color=DIVERSITY))+
+  geom_point(size=2.5,shape=1)+
+  scale_color_manual("Plot Diversity",labels=c("Monoculture","Polyculture"),values=wes_palette("Darjeeling"))+
+  theme_minimal()+
+  theme(legend.position="none")+
+  labs(x="Plot",y="Birds Observed/Visit")
+final_abun<-abun_by_plot+geom_point(data=bird.plot,aes(x=reorder(PLOT,mean_plot_abun),y=mean_plot_abun),size=3)+
+  geom_errorbar(data=bird.plot,aes(ymin=mean_plot_abun-se_plot_abun,ymax=mean_plot_abun+se_plot_abun))
+final_abun
+
+##histogram
+hist.div<-ggplot(bird.visit,aes(x=total_abun,fill=DIVERSITY),alpha=.6)+geom_density(alpha=.7)+
+  theme_minimal()+labs(y="Density",x="Bird Abundance")+
+  scale_fill_manual("Plot Diversity",labels=c("Monoculture","Polyculture"),values=c("firebrick4","darkgoldenrod1"))
+hist.div
+
+abun.by.div<-aov(birds_visit~DIVERSITY+Error(PLOT),data=bird.visit)
+pander(summary(abun.by.div),round=c(0,2,2,3,3))
+
+plot(density(residuals(abun.by.div)))
+residuals(abun.by.div)
+
+bird.visit$M1.pred=predict(abun.by.div)
+bird.visit$M1.Resid=residuals(abun.by.div)
+ggplot(bird.visit,aes(M1.Fit,M1.Resid,color=DIVERSITY))+geom_point()
+
+qqnorm(bird.visit$birds_visit)
+qqline(bird.visit$birds_visit)
+shapiro.test(bird.visit$birds_visit)
+library(car)
+
+
+plot.guild2<-birds.melt%>%
+  group_by(DIVERSITY,PLOT,VISIT,feeding.guild)%>%
+  summarize(total_birds_visit = sum(value))
+
+rtr<-lm(total_birds_visit~DIVERSITY*feeding.guild+PLOT,data=plot.guild2)
+summary(aov(rtr))
