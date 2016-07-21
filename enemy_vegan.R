@@ -73,6 +73,16 @@ View(birds.plot.2)
 ##run model against visit-level data
 divbydiv<-aov(div~DIVERSITY*PLOT+VISIT,data=birds)
 summary(divbydiv)
+qq.plot(birds$div)
+shapiro.test(birds$div)
+ks.test(birds$div,pnorm)
+birdres<-merge(birds,residuals(divbydiv))
+View(birdres)
+hist.div.res<-ggplot(birdres,aes(x=y,fill=DIVERSITY,color=DIVERSITY),alpha=.6)+geom_density(alpha=.5)+
+  theme_minimal()+labs(y="Density",x="Residuals(Bird Div)")+
+  scale_fill_manual("Plot Diversity",labels=c("Monoculture","Polyculture"),values=c("darkslateblue","firebrick2"))+scale_color_manual("Plot Diversity",labels=c("Monoculture","Polyculture"),values=c("darkslateblue","firebrick2"))+
+  theme(legend.position="none")
+hist.div.res
 ###species diversity varies by tree diversity, not plot
 abunbydiv<-aov(total_abun~DIVERSITY*PLOT+PLOT/VISIT,data=birds)
 summary(abunbydiv)
@@ -162,5 +172,56 @@ rare.all #richness by effort
 rare.all.ind<-ggplot(rarc.all,aes(x=individuals,y=richness))+geom_point(size=2)+theme_minimal()
 rare.all.ind #richness by individuals
 
-poly.rich<-rich(bird.poly.mat)
-mono.rich<-
+##by div
+rarc.poly<-rarc(bird.poly.mat,nrandom=99)
+rarc.mono<-rarc(bird.mono.mat,nrandom=99)
+
+div.rarc<-ggplot()+#by samples
+  geom_point(data=rarc.poly,aes(x=samples,y=richness),size=3,shape=1,color="firebrick2")+
+  geom_point(data=rarc.mono,aes(x=samples,y=richness),size=3,shape=2,color="darkslateblue")+
+  theme_minimal()
+div.rarc
+
+div.rarc.ind<-ggplot()+#by individuals
+  geom_point(data=rarc.poly,aes(x=individuals,y=richness),size=3,shape=1,color="firebrick2")+
+  geom_point(data=rarc.mono,aes(x=individuals,y=richness),size=3,shape=2,color="darkslateblue")+
+  theme_minimal()
+div.rarc.ind
+
+##comparing 2 communities
+#extrapolate richness using largest number of sampling units
+polyfy<-raref(matrix=bird.poly.mat,dens=sum(bird.mono.mat),nrandom=300)
+monofy<-raref(matrix=bird.mono.mat,dens=sum(bird.mono.mat),nrandom=300)
+polyfy$Sinterp[2] #interpolating
+monofy$Sinterp[2]
+##bootstrapping
+polyfy2<-raref2(matrix=bird.poly.mat,dens=sum(bird.mono.mat),tolerance=0.01,nrandom=300)
+monofy2<-raref2(matrix=bird.mono.mat,dens=sum(bird.mono.mat),tolerance=0.01,nrandom=300)
+polyfy2$mean.boot
+polyfy2$sd.boot
+monofy2$mean.boot
+monofy2$sd.boot##these numbers are all very similar
+polyfy2
+##comparing cumulative spcies richness
+#only one value..no test
+c2cv(com1=bird.poly.mat,com2=bird.mono.mat,nrandom=999,verbose=F)#are these communities different?
+#base on the average
+#sig
+
+#c2rcv - control for effect of differences in density/effort
+
+##average species richness over 2 sets of samples
+##using randomization test
+mo<-rich(bird.mono.mat,nrandom=50,verbose=T)
+po<-rich(bird.poly.mat,nrandom=50,verbose=T)
+c2m(pop1=mo$sumrow,pop2=po$sumrow,nrandom=999,verbose=F)
+#very different
+
+#shared species
+allplot<-list(bird.mono.mat,bird.poly.mat)
+shared(allplot)#absolute and relative number of species shared
+#observed on diag, shared above, total richness below
+
+####dong similar things with BiodiversityR
+install.packages("BiodiversityR")
+library(BiodiversityR)
