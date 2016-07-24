@@ -1,4 +1,3 @@
-
 ---
 title: "Diversity effects: bird community"
 author: "collnell"
@@ -21,16 +20,17 @@ library(reshape2)
 library(plotly)
 library(dplyr)
 library(labdsv)
-library(wesanderson)
 library(knitr)
 library(pander)
 library(rich)
+library(car)
 ###enter data
-birds<-read.csv("enemy_bird_visit.csv")
-sp.list<-read.csv("enemy_bird_list.csv")
+birds<-read.csv("data/enemy_bird_visit.csv")
+sp.list<-read.csv("data/enemy_bird_list.csv")
+plots<-read.csv("data/enemy_plots.csv")
 ```
 
-```{r,datasummary,warning=F,include=F,echo=F}
+```{r,datawrangling,warning=F,include=F,echo=F}
 std <- function(x) sd(x)/sqrt(length(x))
 
 ##clean data 
@@ -40,58 +40,95 @@ birds[is.na(birds)]<-0
 cols<-names(birds)
 drops<-c("DIVERSITY","PLOT","VISIT")
 sps<-cols[-c(1:3)]##this is a list of the names of the birds only
-birds$VISIT<-as.character(birds$VISIT)
+birds$VISIT<-as.numeric(birds$VISIT)
 birds$total_abun<-rowSums(birds[,sps])
 bird.sp<-birds[,sps]#matrix plot x sp
+plots[is.na(plots)]<-0
+plots$PLOT<-as.character(plots$PLOT)
+plots$CEIBA<-as.factor(plots$CEIBA)
+
+###diversity matrices
 bird.poly<-birds%>%
   filter(DIVERSITY == 'P')
 bird.poly.mat<-bird.poly[,sps]
 bird.mono<-birds%>%
   filter(DIVERSITY == 'M')
 bird.mono.mat<-bird.mono[,sps]
+#rarefaction/sp acuum
+rarc.poly<-rarc(bird.poly.mat,nrandom=99)
+rarc.mono<-rarc(bird.mono.mat,nrandom=99)
+```
 
-##summarize data for plots/analyses
-#by plot
-#abundance
-bird.visit<-birds%>%
-  mutate(birds_visit=rowSums(.[sps]))
-bird.visit$VISIT<-as.character(bird.visit$VISIT)
-bird.visit$PLOT<-as.character(bird.visit$PLOT)
-bird.plot<-birds%>%
-  mutate(birds_plot_visit=rowSums(.[sps]))%>%
+```{r,datasummary,echo=F,warning=F}
+##create dfs summarizing at visit, plot, and diversity levels forbirds ocmmunity metrics
+###by plot visit
+birds$total_abun<-rowSums(birds[,sps])
+birds$shan<-diversity(bird.sp)##plot/visit level shannon calculation
+birds$richness<-specnumber(bird.sp)##no adjustment for indivudals
+
+##by plot
+birds.plot.mean.vars<-birds%>%##plot level means (per visit)
   group_by(DIVERSITY,PLOT)%>%
-  summarize(total_birds_plot=sum(birds_plot_visit),
-            n_visit=length(VISIT),
-            mean_birds_visit=mean(birds_plot_visit),
-            se_birds_visit=std(birds_plot_visit))
+  summarize(n_visit = max(VISIT),
+            mean_abun = mean(total_abun), se_abun = std(total_abun), total_abun = sum(total_abun),
+            mean_shan = mean(shan), se_shan = std(shan),
+            mean_rich = mean(richness), se_rich = std(richness))
+birds.plot.mean.vars$PLOT<-as.character(birds.plot.mean.vars$PLOT)##missing total richness, total diversity based on plot sums
+birds.plot.sum.vars<-birds%>%
+  group_by(DIVERSITY,PLOT)%>%
+  summarize_each(funs(sum))
+plot.sp<-birds.plot.sum.vars[,sps]
+birds.plot.sum.vars$plot_shan<-diversity(plot.sp)
+birds.plot.sum.vars$plot_rich<-specnumber(plot.sp)
+birds.plot.sum.vars$PLOT<-as.character(birds.plot.sum.vars$PLOT)##includes summed plot shannon diversity, abundance, and sp richness
+###single plot-level df
+birds.plot.vars<-left_join(birds.plot.mean.vars,birds.plot.sum.vars[,c("PLOT","plot_shan","plot_rich")],by="PLOT")
 
-bird.div<-bird.plot%>%
+#by plot diversity
+birds.div.mean.vars<-birds.plot.mean.vars%>% ##diversity level means (per visit)
   group_by(DIVERSITY)%>%
-  summarize(total_birds_div=sum(total_birds_plot),
-            n_plots=length(PLOT),
-            mean_birds_plot_visit=mean(mean_birds_visit),
-            se_birds_plot_visit=std(mean_birds_visit))
+  summarize(total_visit_div = sum(n_visit),n_plots_div = length(PLOT),
+            total_abun_div = sum(total_abun),mean_abun_div = mean(mean_abun), se_abun_div = std(mean_abun),
+            mean_shan_div = mean(mean_shan), se_shan_div = std(mean_shan),
+            mean_rich_div = mean(mean_rich), se_rich_div = std(mean_rich))##missing diversity summed values
+birds.plot.sum.vars$PLOT<-as.numeric(birds.plot.sum.vars$PLOT)
+birds.div.sum.vars<-birds.plot.sum.vars%>%
+  group_by(DIVERSITY)%>%
+  summarize_each(funs(sum))
+div.sp<-birds.div.sum.vars[,sps]  
+birds.div.sum.vars$div_shan<-diversity(div.sp)
+birds.div.sum.vars$div_rich<-specnumber(div.sp)  
+birds.div.vars<-left_join(birds.div.mean.vars,birds.div.sum.vars[,c("DIVERSITY","div_shan","div_rich")],by="DIVERSITY")
 
+````
+
+```{r,treeID,echo=F,warning=F}
+birds.plot.vars.trees<-left_join(birds.plot.vars,plots[,c("PLOT","GENODIV","CAOBA","CEIBA","CIRI","JABIN","MACU","PICH")],by="PLOT")
+```
+
+```{r, melteddf,echo=F,message=F,warning=F}
 birds.melt<-melt(birds,id.vars=c("DIVERSITY","PLOT","VISIT","total_abun"),variable.name="ID")%>%
-  left_join(sp.list[,c("ID","feeding.guild","Family","Order")],by="ID")
-insect.birds<-birds.melt%>%
+  left_join(sp.list[,c("ID","feeding.guild","Family","Order")],by="ID") ##merge with taxonomic groupings
+```
+
+```{r,insectivores,echo=F,message=F,warning=F}
+insect.birds<-birds.melt%>% ##filter data to insectivorous birds
   filter(feeding.guild %in% c("IN","FL","OM"))
 
 ins.plot<-insect.birds%>%
   group_by(DIVERSITY,PLOT,VISIT)%>%
   summarize(total_birds_plot_visit=sum(value))
+
 ins.plot1<-ins.plot%>%
   group_by(DIVERSITY,PLOT)%>%
   summarize(total_birds_plot = sum(total_birds_plot_visit),
             mean_birds_visit = mean(total_birds_plot_visit),
             n_visit=as.numeric(max(VISIT)),
             se_birds_visit = std(total_birds_plot_visit))
-#rarefaction/sp acuum
-rarc.poly<-rarc(bird.poly.mat,nrandom=99)
-rarc.mono<-rarc(bird.mono.mat,nrandom=99)
+
 ```  
 
-```{r,plotaes,echo=F}
+```{r,plotting,echo=F}
 plot_means<-function(){
   list(
     stat_summary(fun.y = "mean", geom = "bar", fill = DIVERSITY),
@@ -113,17 +150,22 @@ These data are from a field experiment conducted July 2015 at the [UADY forest d
 #Bird Observations: All Birds  
 ###Abundance  
 Does **bird abundance** differ between **monoculture** and **polyculture** plots?  
-```{r, fguilds,fig.height=4,message=F,echo=F}
+```{r, fguilds,fig.height=4,message=F,echo=F,warning=F}
+##summarizing data by feeding guilds at multiple scales
+
+#plot diversity
 div.guild<-birds.melt%>%###this is the total number of birds~diversity+feeding guild
   group_by(DIVERSITY,feeding.guild)%>%
   summarize(total_birds = sum(value))
 
+##visit
 plot.visit<-birds.melt%>%
   group_by(DIVERSITY,PLOT,VISIT)%>%
   summarize(total_birds_plot=sum(value))%>%
   group_by(DIVERSITY,PLOT)%>%
   summarize(mean_birds_plot = mean(total_birds_plot))
 
+##plot
 plot.guild<-birds.melt%>%
   group_by(DIVERSITY,PLOT,VISIT,feeding.guild)%>%
   summarize(total_birds_visit = sum(value))%>%
@@ -146,48 +188,51 @@ plot.guild3<-plot.guild2%>%
 
 ```
 <br>  
-```{r,diagnostics,fig.height=4,echo=F}
-hist.div<-ggplot(bird.visit,aes(x=total_abun,fill=DIVERSITY,color=DIVERSITY),alpha=.6)+geom_density(alpha=.7)+
+```{r,abundance.raw,fig.height=4,echo=F}
+##histogram of raw data
+abun.hist<-ggplot(birds,aes(x=total_abun,fill=DIVERSITY,color=DIVERSITY),alpha=.6)+geom_density(alpha=.7)+
   theme_minimal()+labs(y="Density",x="Bird Abundance")+
   scale_fill_manual("Plot Diversity",labels=c("Monoculture","Polyculture"),values=c("darkslateblue","#1B9E77"))+plot_aes()+
   theme(legend.position="top")
-
+##raw observations
 abun.rarc.ind<-ggplot()+#by individuals
-  geom_point(data=rarc.poly,aes(x=samples,y=individuals),size=2,shape=1,color="#1B9E77")+
-  geom_point(data=rarc.mono,aes(x=samples,y=individuals),size=2,shape=1,color="darkslateblue")+
+  geom_point(data=rarc.poly,aes(x=samples,y=individuals),size=1,shape=1,color="#1B9E77")+
+  geom_point(data=rarc.mono,aes(x=samples,y=individuals),size=1,shape=1,color="darkslateblue")+
   theme_minimal()+labs(y="Individuals",x="Observation")
 
-plot_grid(hist.div,abun.rarc.ind)
+plot_grid(abun.hist,abun.rarc.ind)
 ```
 
 
-```{r,plotplots,fig.height=3.5,message=F,echo=F}
+```{r,abundance.plot,fig.height=3.5,message=F,echo=F}
 
-abun_by_plot<-ggplot(bird.plot,aes(x=reorder(PLOT,mean_birds_visit),y=mean_birds_visit,color=DIVERSITY))+
-  geom_errorbar(aes(ymin=mean_birds_visit-se_birds_visit,ymax=mean_birds_visit+se_birds_visit),color="black")+
+abun.plots<-ggplot(birds.plot.vars,aes(x=reorder(PLOT,mean_abun),y=mean_abun,color=DIVERSITY))+
+  geom_errorbar(aes(ymin=mean_abun-se_abun,ymax=mean_abun+se_abun),color="black")+
   geom_point(size=3,shape=16)+
   scale_color_manual("Plot Diversity",labels=c("Monoculture","Polyculture"),values=c("darkslateblue","#1B9E77"))+
   theme_minimal()+
   theme(legend.position="none",axis.text.x=element_blank())+
   labs(x="Plot",y="Birds/Visit")
-allabun<-abun_by_plot+geom_point(data=bird.visit,aes(x=reorder(PLOT,total_abun),y=total_abun),size=2,shape=1)
+abun.plot.mean<-abun.plots+geom_point(data=birds,aes(x=reorder(PLOT,total_abun),y=total_abun),size=1,shape=1)
 
 
-div_abun_plot<-ggplot(bird.div,aes(x=DIVERSITY,y=mean_birds_plot_visit,color=DIVERSITY))+
-  geom_point(size=10,shape=19)+
-  geom_errorbar(aes(ymin=mean_birds_plot_visit-se_birds_plot_visit,ymax=mean_birds_plot_visit+se_birds_plot_visit),color="black",width=.1)+
+abun.div<-ggplot(birds.div.vars,aes(x=DIVERSITY,y=mean_abun_div,color=DIVERSITY))+
+  geom_point(size=8,shape=19)+
+  geom_errorbar(aes(ymin=mean_abun_div-se_abun_div,ymax=mean_abun_div+se_abun_div),color="black",width=.1)+
   labs(x="Plot Diversity",y="Birds/Visit")+
   theme_minimal()+
   scale_color_manual(labels=c("Monoculture","Polyculture"),values=c("darkslateblue","#1B9E77"))+theme(legend.position="none")
-div_abun_plos<-div_abun_plot+geom_point(data=bird.plot,aes(x=DIVERSITY,y=mean_birds_visit),size=2,shape=1,alpha=.65)
+abun.div.mean<-abun.div+geom_point(data=birds.plot.vars,aes(x=DIVERSITY,y=mean_abun),size=3,shape=1,alpha=.65)
 
-plot_grid(allabun,div_abun_plos)
+plot_grid(abun.plot.mean,abun.div.mean)
 ```
   
   
 ANOVA testing for main effect of tree DIVERSITY controlling for PLOT    
-```{r,abunbydivd, results="asis",echo=F}
-abun.by.div<-aov(birds_visit~DIVERSITY+Error(PLOT),data=bird.visit)
+```{r,abuntests, results="asis",echo=F}
+birds$PLOT<-as.character(birds$PLOT)
+birds$VISIT<-as.character(birds$VISIT)
+abun.by.div<-aov(total_abun~DIVERSITY+PLOT,data=birds)
 pander(summary(abun.by.div),round=c(0,2,2,2,3))  
 ```
 <style type="text/css">
@@ -199,20 +244,19 @@ pander(summary(abun.by.div),round=c(0,2,2,2,3))
 <br>   
 and among **feeding guilds?**
 
-```{r,divplots,fig.height=3.5,echo=F}
+```{r,abundance.fg,fig.height=3.5,echo=F}
 
-
-guilddiv<-ggplot(div.guild,aes(y=total_birds,x=reorder(feeding.guild,total_birds),fill=DIVERSITY))+
+fg.abun<-ggplot(div.guild,aes(y=total_birds,x=reorder(feeding.guild,total_birds),fill=DIVERSITY))+
   geom_bar(stat="identity")+
   scale_fill_manual("Plot Diversity",labels=c("Monoculture","Polyculture"),values=c("darkslateblue","#1B9E77"))+
   theme_minimal()+theme(legend.position="top")+labs(x="Feeding Guild",y="Total Birds Observed")
 
-divguild.plot<-ggplot(plot.guild3,aes(x=reorder(feeding.guild,mean_birds_div),y=mean_birds_div,fill=DIVERSITY))+
+fg.plot.abun<-ggplot(plot.guild3,aes(x=reorder(feeding.guild,mean_birds_div),y=mean_birds_div,fill=DIVERSITY))+
   geom_bar(stat="identity",position="dodge")+theme_minimal()+scale_fill_manual(values=c("darkslateblue","#1B9E77"))+
   geom_errorbar(aes(ymin=mean_birds_div-se_birds_div,ymax=mean_birds_div+se_birds_div),width=.2,position=position_dodge(.9))+theme(legend.position="none")+
   labs(x="Feeding Guild",y="Birds/Visit")
 
-plot_grid(guilddiv,divguild.plot)
+plot_grid(fg.abun,fg.plot.abun)
 ```  
 
 Guilds: Granivorous (GR), Carnivorous (CA), Nectivorous (NE), Frugivorous (FR), Insectivorous (FL = flycatching, IN= gleaning), Omnivorous (OM), NA = unidentified   
@@ -220,9 +264,9 @@ Guilds: Granivorous (GR), Carnivorous (CA), Nectivorous (NE), Frugivorous (FR), 
   
     
 ANOVA testing for main and interactive effects of tree DIVERSITY and FEEDING GUILD
-```{r,abunbydivfg, results="asis",echo=F}    
-rtr<-lm(total_birds_visit~DIVERSITY*feeding.guild+PLOT,data=plot.guild2)
-pander(summary(aov(rtr)),round=c(0,2,2,2,3)) 
+```{r,abun.fg.tests, results="asis",echo=F}    
+abun.by.fg<-lm(total_birds_visit~DIVERSITY*feeding.guild+PLOT,data=plot.guild2)
+pander(summary(aov(abun.by.fg)),round=c(0,2,2,2,3)) 
 ```
  <style type="text/css">
 .table {
@@ -236,25 +280,23 @@ pander(summary(aov(rtr)),round=c(0,2,2,2,3))
 ###Richness  
  
   
-```{r,richy,include=F,echo=F}
+```{r,richness,include=F,echo=F}
 allrichness<-rich(matrix=bird.sp,verbose=T)
-birds$richness<-specnumber(bird.sp)##no adjustment for indivudals
-birds$div<-diversity(bird.sp)
-
-birds.plot.mean.vars<-birds%>%
-  group_by(DIVERSITY,PLOT)%>%
-  summarize(n_visit = max(VISIT),
-            mean_abun = mean(total_abun), se_abun = std(total_abun), total_abun = sum(total_abun),
-            mean_div = mean(div), se_div = std(div),
-            mean_rich = mean(richness), se_rich = std(richness))
-
-birds.plot.mean.vars$PLOT<-as.integer(birds.plot.mean.vars$PLOT)
+##dont include hard to get rid of message
 ```
 
-```{r,probso,echo=F}
+```{r,richness.fg,echo=F}
+
 birds.div.vars<-birds.plot.mean.vars%>%
   group_by(DIVERSITY)%>%
-  summarize(total_abun = sum(total_abun),mean_abun_div = mean(mean_abun), se_abun_div = std(mean_abun),mean_div_div = mean(mean_div), se_div_div = std(mean_div), mean_rich_div = mean(mean_rich), se_rich_div = std(mean_rich))
+  summarize(total_abun = sum(total_abun),mean_abun_div = mean(mean_abun), se_abun_div = std(mean_abun),mean_shan_div = mean(mean_shan), se_shan_div = std(mean_shan), mean_rich_div = mean(mean_rich), se_rich_div = std(mean_rich))
+
+fgrich<-birds.melt%>%
+  group_by(DIVERSITY,feeding.guild,ID)%>%
+  summarize(guild.rich = sum(value))
+fg2<-fgrich%>%
+  group_by(DIVERSITY,feeding.guild)%>%
+  summarize(richn = sum(guild.rich>0))
 ##these are diversity-level means % se based on plot/visit means
 ```
 Mean richness plot/visit: `r allrichness$mr`  
@@ -262,19 +304,17 @@ Total richness: `r allrichness$cr`
 Singletons: `r allrichness$singletons`  
 
 
-```{r,allbird,fig.height=4,message=F,comment=F,echo=F}
+```{r,richness.rarc,fig.height=4,message=F,comment=F,echo=F}
 
 div.rarc<-ggplot()+#by samples
-  geom_point(data=rarc.poly,aes(x=samples,y=richness),size=2,shape=1,color="#1B9E77")+
-  geom_point(data=rarc.mono,aes(x=samples,y=richness),size=2,shape=1,color="darkslateblue")+
+  geom_point(data=rarc.poly,aes(x=samples,y=richness),size=1,shape=1,color="#1B9E77")+
+  geom_point(data=rarc.mono,aes(x=samples,y=richness),size=1,shape=1,color="darkslateblue")+
   theme_minimal()+labs(x="Observation",y="Species Richness")+scale_color_manual("Plot Diversity",labels=c("Monoculture","Polyculture"))+
   theme(legend.position="top")
 
-
-
 div.rarc.ind<-ggplot()+#by individuals
-  geom_point(data=rarc.poly,aes(x=individuals,y=richness),size=2,shape=16,color="#1B9E77")+
-  geom_point(data=rarc.mono,aes(x=individuals,y=richness),size=2,shape=16,color="darkslateblue")+
+  geom_point(data=rarc.poly,aes(x=individuals,y=richness),size=1,shape=16,color="#1B9E77")+
+  geom_point(data=rarc.mono,aes(x=individuals,y=richness),size=1,shape=16,color="darkslateblue")+
   theme_minimal()+labs(x="Individuals",y="Species Richness")
 
 plot_grid(div.rarc,div.rarc.ind)
@@ -284,7 +324,7 @@ plot_grid(div.rarc,div.rarc.ind)
   
   
 **Richness estimators:**    
-```{r,richnest,results="asis",echo=F}
+```{r,richness.est,results="asis",echo=F}
 all.spec<-specpool(bird.sp)
 poly.spec<-specpool(bird.poly.mat)
 mono.spec<-specpool(bird.mono.mat)
@@ -300,27 +340,28 @@ Incidence-based extrapolation to estimate **species richness** using 'specpool' 
 }
 </style>  
 <br>  
-```{r,richhist,fig.height=4,echo=F}
+```{r,richness.raw,fig.height=4,echo=F}
+#histogram
 hist.rich<-ggplot(birds,aes(x=richness,fill=DIVERSITY,color=DIVERSITY),alpha=.6)+geom_density(alpha=.7)+
   theme_minimal()+labs(y="Density",x="Species Richness")+
   scale_fill_manual("Plot Diversity",labels=c("Monoculture","Polyculture"),values=c("darkslateblue","#1B9E77"))+plot_aes()+
   theme(legend.position="top")##histogram of richness values by diversity
 
-div.rich<-ggplot(data=birds.div.vars,aes(x=DIVERSITY,y=mean_rich_div,color=DIVERSITY))+##richness plot by diversity
-  geom_point(size=10,shape=19)+
+rich.div<-ggplot(data=birds.div.vars,aes(x=DIVERSITY,y=mean_rich_div,color=DIVERSITY))+##richness plot by diversity
+  geom_point(size=8,shape=19)+
   geom_errorbar(aes(ymin=mean_rich_div-se_rich_div,ymax=mean_rich_div+se_rich_div),color="black",width=.1)+
-  labs(x="Plot Diversity",y="Birds/Visit")+
+  labs(x="Plot Diversity",y="Mean Richness/Visit")+
   theme_minimal()+
   scale_color_manual(labels=c("Monoculture","Polyculture"),values=c("darkslateblue","#1B9E77"))+theme(legend.position="none")
-div.rich.pts<-div.rich+geom_point(data=birds.plot.mean.vars,aes(x=DIVERSITY,y=mean_rich),size=2,shape=1,alpha=.65)
+rich.div.mean<-rich.div+geom_point(data=birds.plot.vars,aes(x=DIVERSITY,y=mean_rich),size=3,shape=1,alpha=.65)
 
-plot_grid(hist.rich,div.rich.pts)
+plot_grid(hist.rich,rich.div.mean)
 ```  
   
-ANOVA testing for main effect of tree DIVERSITY controlling for PLOT    
-```{r,richbydivd, results="asis",echo=F}
-richbydiv<-aov(richness~DIVERSITY+PLOT,data=birds)
-pander(summary(richbydiv))  
+ANOVA testing for main effect of tree DIVERSITY & PLOT    
+```{r,rich.test, results="asis",echo=F}
+rich.by.div<-aov(richness~DIVERSITY+PLOT,data=birds)
+pander(summary(rich.by.div))  
 ```
 <style type="text/css">
 .table {
@@ -329,35 +370,157 @@ pander(summary(richbydiv))
 </style>  
 <br>  
 **Species richness** by **feeding guild**
-```{r,richguild,fig.height=3.5,eval=F,echo=F}
+```{r,richguild,fig.height=4,echo=F}
+fg_me<-birds.melt%>%
+  group_by(DIVERSITY,PLOT,VISIT,feeding.guild)%>%
+  summarize(visit_rich= sum(value>0))
+fg_mean<-fg_me%>%
+  group_by(DIVERSITY,PLOT,feeding.guild)%>%
+  summarize(plot_rich = mean(visit_rich))%>%
+  group_by(DIVERSITY,feeding.guild)%>%
+  summarize(div_rich = mean(plot_rich), se_div_rich = std(plot_rich))##mean plkot richness
 
-
-guildrich<-ggplot(div.guild,aes(y=total_birds,x=reorder(feeding.guild,total_birds),fill=DIVERSITY))+
+guildrich<-ggplot(fg2,aes(y=richn,x=reorder(feeding.guild,richn),fill=DIVERSITY))+
   geom_bar(stat="identity")+
   scale_fill_manual("Plot Diversity",labels=c("Monoculture","Polyculture"),values=c("darkslateblue","#1B9E77"))+
-  theme_minimal()+theme(legend.position="top")+labs(x="Feeding Guild",y="Total Birds Observed")
-
-richguild.plot<-ggplot(plot.guild3,aes(x=reorder(feeding.guild,mean_birds_div),y=mean_birds_div,fill=DIVERSITY))+
+  theme_minimal()+theme(legend.position="top")+labs(x="Feeding Guild",y="Total Species Richness")
+divguild.rich<-ggplot(fg_mean,aes(x=reorder(feeding.guild,div_rich),y=div_rich,fill=DIVERSITY))+
   geom_bar(stat="identity",position="dodge")+theme_minimal()+scale_fill_manual(values=c("darkslateblue","#1B9E77"))+
-  geom_errorbar(aes(ymin=mean_birds_div-se_birds_div,ymax=mean_birds_div+se_birds_div),width=.2,position=position_dodge(.9))+theme(legend.position="none")+
-  labs(x="Feeding Guild",y="Birds/Visit")
+  geom_errorbar(aes(ymin=div_rich-se_div_rich,ymax=div_rich+se_div_rich),width=.2,position=position_dodge(.9))+theme(legend.position="none")+
+  labs(x="Feeding Guild",y="Mean Richness/Visit")
 
-plot_grid(guildrich,richguild.plot)
+plot_grid(guildrich,divguild.rich)
 ```  
   
-###Diversity    
+ANOVA testing for effects of tree DIVERSITY and FEEDING GUILD
+```{r,richbydivfg, results="asis",echo=F}    
+rtc<-lm(visit_rich~DIVERSITY*feeding.guild+PLOT,data=fg_me)
+pander(summary(aov(rtc)),round=c(0,2,2,2,3)) 
+```
+ <style type="text/css">
+.table {
+    width: 50%;
+}
+</style>    
+  
+**Shared species** 
+
+###Diversity  
+Shannon Diversity  
+```{r,divhist,fig.height=4,echo=F}
+
+shan.hist<-ggplot(birds,aes(x=shan,fill=DIVERSITY,color=DIVERSITY),alpha=.6)+geom_density(alpha=.7)+
+  theme_minimal()+labs(y="Density",x="Shannon Diversity")+
+  scale_fill_manual("Plot Diversity",labels=c("Monoculture","Polyculture"),values=c("darkslateblue","#1B9E77"))+plot_aes()+
+  theme(legend.position="top")##histogram of div values by diversity
+
+shan.div<-ggplot(data=birds.div.vars,aes(x=DIVERSITY,y=mean_shan_div,color=DIVERSITY))+##rshannn by diversity
+  geom_point(size=8,shape=19)+
+  geom_errorbar(aes(ymin=mean_shan_div-se_shan_div,ymax=mean_shan_div+se_shan_div),color="black",width=.1)+
+  labs(x="Plot Diversity",y="Mean Diversity/Visit")+
+  theme_minimal()+
+  scale_color_manual(labels=c("Monoculture","Polyculture"),values=c("darkslateblue","#1B9E77"))+theme(legend.position="none")
+shan.div.mean<-shan.div+geom_point(data=birds.plot.vars,aes(x=DIVERSITY,y=mean_shan),size=3,shape=1,alpha=.65)
+
+plot_grid(shan.hist,shan.div.mean)
+```  
+  
+ANOVA testing for main effect of tree DIVERSITY & PLOT    
+```{r,shan.tests, results="asis",echo=F}
+shan.by.div<-aov(shan~DIVERSITY+PLOT,data=birds)
+pander(summary(shan.by.div))  
+```
+<style type="text/css">
+.table {
+    width: 50%;
+}
+</style>  
+<br>  
+  
 
 ###Phylogenetic Diversity   
-  
+
+###Species Composition  
+
+
 ###Taxonomy  
 
 **`r length(unique(birds.melt$PLOT))` plots** visited 4x each   
 **`r sum(birds.melt$value)` bird observations** of **`r length(unique(birds.melt$ID))` species** from **`r length(unique(birds.melt$Family))` families** (`r sort(unique(birds.melt$Family))`) and **`r length(unique(birds.melt$Order))` orders** (`r sort(unique(birds.melt$Order))`)  
  
-#Bird Observations: Insectivorous Birds   
+#Tree Identity Effects  
+```{r,treeIDfx,echo=F,message=F,fig.height=4}
+birds.plot.vars.trees<-left_join(birds.plot.vars,plots[,c("PLOT","GENODIV","CAOBA","CEIBA","CIRI","JABIN","MACU","PICH")],by="PLOT")
+trees<-birds.plot.vars.trees[,c("DIVERSITY","PLOT","mean_abun","mean_shan","mean_rich","CAOBA","CEIBA","CIRI","JABIN","MACU","PICH")]
+tree.melt<-melt(trees,id.vars=c("DIVERSITY","PLOT","CAOBA","CEIBA","CIRI","JABIN","MACU","PICH"))
+tree.melt$CEIBA<-as.factor(tree.melt$CEIBA)
+tree.melt$CAOBA<-as.factor(tree.melt$CAOBA)
+tree.melt$CIRI<-as.factor(tree.melt$CIRI)
+tree.melt$JABIN<-as.factor(tree.melt$JABIN)
+tree.melt$MACU<-as.factor(tree.melt$MACU)
+tree.melt$PICH<-as.factor(tree.melt$PICH)
+##for tests
+abundf<-filter(tree.melt,variable=="mean_abun")
+richdf<-filter(tree.melt,variable=="mean_rich")
+shandf<-filter(tree.melt,variable=="mean_shan")
+abun_melt<-melt(abundf,id.vars=c("DIVERSITY","PLOT","variable","value"),variable.name="TREE",value.name="sp")
+abun.tree<-abun_melt%>%
+  group_by(DIVERSITY,TREE,sp)%>%
+  summarize(mean_abun_sp = mean(value),se_abun_sp = std(value),sd_abun_sp = sd(value),n_plots = length(PLOT))
+levels(abun.tree$DIVERSITY)<-c("Monoculture","Polyculture")
+abun.tree$sp<-as.factor(abun.tree$sp)
+levels(abun.tree$sp)<-c("with","without")
+trcast<-dcast(abun.tree,DIVERSITY+TREE~sp,value.var=c("mean_abun_sp"))##2 cols for sp
+trcastsd<-dcast(abun.tree,DIVERSITY+TREE~sp,value.var=c("sd_abun_sp"))%>%
+  rename(with_sd = with, without_sd = without)##2 cols for sp
+trcastn<-dcast(abun.tree,DIVERSITY+TREE~sp,value.var=c("n_plots"))%>%
+  rename(with_n = with, without_n = without)##2 cols for sp
+trcast$fx<-log((trcast$without)/(trcast$with))##proportional difference in number of species between control & treatment (with)
+#ex=C=without
+fxdf<-cbind(trcast[,c("DIVERSITY","TREE","with","without","fx")],trcastsd[,c("with_sd","without_sd")],trcastn[,c("with_n","without_n")])
+#ex=C=without
+
+#df$se<-(sqrt((df$C_sd)^2/(df$C_n*df$C_mean)+(df$T_sd)^2/(df$T_n*df$T_x)))/(df$T_n+df$C_n)
+fxdf$fx_se<-(sqrt((fxdf$without_sd)^2/(fxdf$without_n*fxdf$without)+(fxdf$with_sd)^2/(fxdf$with_n*fxdf$with)))/(fxdf$with_n+fxdf$without_n)
+
+```
+
+```{r,treeIDfxplots,echo=F,message=F,fig.height=4,warning=F}
+tree.abun.div4<-ggplot(data=abun.tree,aes(x=TREE,y=mean_abun_sp,color=DIVERSITY))+
+  geom_errorbar(aes(ymin=mean_abun_sp-se_abun_sp,ymax=mean_abun_sp+se_abun_sp),width=.1,color="black")+
+  geom_point(data=abun.tree,aes(shape=sp),size=3)+
+  scale_shape_manual("Species Present",labels=c("No","Yes"),values=c(1,16))+
+  scale_color_manual("Plot Diversity",labels=c("Monoculture","Polyculture"),values=c("darkslateblue","#1B9E77"))+
+  facet_grid(.~DIVERSITY)+labs(x="Tree Species",y="Bird Observations/Visit")+
+    theme_minimal()+theme(axis.text.x=element_text(angle=45))+guides(color="none")
+tree.abun.div4 ##abundance by div~tree+presense
+
+
+
+tree.abun.div5<-ggplot(data=fxdf,aes(x=TREE,y=fx,fill=DIVERSITY))+
+  geom_bar(data=fxdf,stat="identity")+
+  geom_errorbar(aes(ymin=fx-fx_se,ymax=fx+fx_se),width=.2,color="black",position=position_dodge(.9))+
+  scale_fill_manual("Plot Diversity",labels=c("Monoculture","Polyculture"),values=c("darkslateblue","#1B9E77"))+
+  facet_grid(.~DIVERSITY)+labs(x="Tree Species",y="Effect Size (Bird Abundance)")+
+  theme_minimal()+theme(axis.text.x=element_text(angle=45))+
+  geom_hline(aes(yintercept=0),lty="dashed")
+tree.abun.div5 ##ab
+##effect size by species/diversity with errorbars
+tree.abun.div6<-ggplot(data=fxdf,aes(x=TREE,y=fx,fill=DIVERSITY))+
+  geom_bar(data=fxdf,stat="identity",position="dodge")+
+  geom_errorbar(aes(ymin=fx-fx_se,ymax=fx+fx_se),width=.2,color="black",position=position_dodge(.9))+
+  scale_fill_manual("Plot Diversity",labels=c("Monoculture","Polyculture"),values=c("darkslateblue","#1B9E77"))+
+  labs(x="Tree Species",y="Effect Size (Bird Abundance)")+
+  theme_minimal()+theme(axis.text.x=element_text(angle=45))+
+  geom_hline(aes(yintercept=0),lty="dashed")
+tree.abun.div6 ##ab
+```
+
+
+#Bird Obs: Insectivorous Birds   
 (including gleaners, flycatchers, and omnivores that consume arthropods)  
 ###same with filtered data
-```{r, insguilds,fig.height=4.5,echo=F}
+```{r, insguilds,fig.height=4.5,echo=F,warning=F}
 ins.guild<-insect.birds%>%###this is the total number of insecitvorous birds~diversity+feeding guild
   group_by(DIVERSITY,feeding.guild)%>%
   summarize(total_birds = sum(value))
@@ -382,15 +545,15 @@ plot_grid(guilddiv,abun_by_plot)
 **`r sum(insect.birds$value)` observations** of **`r length(unique(insect.birds$ID))` species** from **`r length(unique(insect.birds$Family))` families** (`r sort(unique(insect.birds$Family))`) and **`r length(unique(insect.birds$Order))` orders**(`r sort(unique(insect.birds$Order))`)  
   
 ```{r,insbytotal,fig.height=3.5,fig.width=3.5,echo=F}
-bird.visit$PLOT<-as.character(bird.visit$PLOT)
+birds$PLOT<-as.character(birds$PLOT)
 ins.plot$PLOT<-as.character(ins.plot$PLOT)
-compareins<-left_join(bird.visit,ins.plot,by="PLOT")
-ins.by.total<-lm(total_birds_plot_visit~birds_visit,data=compareins)
+compareins<-left_join(birds,ins.plot,by="PLOT")
+ins.by.total<-lm(total_birds_plot_visit~total_abun,data=compareins)
 p<-summary(ins.by.total)$coefficients[,4]
 r2<-summary(ins.by.total)$r.squared
 
-typeplot<-ggplot(data=compareins,aes(x=birds_visit,y=total_birds_plot_visit))+
-  geom_jitter(data=compareins,aes(x=birds_visit,y=total_birds_plot_visit,color=DIVERSITY.x),size=2,shape=1)+
+typeplot<-ggplot(data=compareins,aes(x=total_abun,y=total_birds_plot_visit))+
+  geom_jitter(data=compareins,aes(x=total_abun,y=total_birds_plot_visit,color=DIVERSITY.x),size=1,shape=1)+
   geom_smooth(method="lm",se=F,color="black")+
   theme_minimal()+
   scale_color_manual(values=c("darkslateblue","#1B9E77"))+
